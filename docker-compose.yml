@@ -1,0 +1,66 @@
+services:
+
+  comfyui:
+    init: true
+    container_name: comfyui-megapak
+    image: "yanwk/comfyui-boot:cu130-megapak-pt211"
+    pull_policy: daily
+    ports:
+      - "8188:8188"
+    restart: unless-stopped
+    shm_size: "32gb"
+    volumes:
+      # --- v2 "dockerful" framework dirs (fresh, local to repo root) ---
+      - "./storage-cache/dot-cache:/root/.cache"
+      - "./storage-cache/dot-config:/root/.config"
+      - "./storage-nodes/dot-local:/root/.local"
+      - "./storage-nodes/custom_nodes:/root/ComfyUI/custom_nodes"
+      - "./storage-nodes/user-scripts:/root/user-scripts"
+      - "./storage-nodes/user-profile:/root/ComfyUI/user"
+      # --- Existing data at repo root (498GB models etc., reused in place) ---
+      - "./storage-models/models:/root/ComfyUI/models"
+      - "./storage-models/hf-hub:/root/.cache/huggingface/hub"
+      - "./storage-models/torch-hub:/root/.cache/torch/hub"
+      - "./storage-user/input:/root/ComfyUI/input"
+      - "./storage-user/output:/root/ComfyUI/output"
+      # Existing workflows mounted on top of the fresh user profile
+      - "./storage-user/workflows:/root/ComfyUI/user/default/workflows"
+      # LoRA training backend (AI-Toolkit) — persisted so it survives image re-pulls
+      - "./storage-trainers/ai-toolkit:/root/ai-toolkit"
+      # Comfyroll "CR Select Font" hard-codes /usr/share/fonts/truetype and lists it
+      # at node registration; the megapak image has no such dir (its fonts live under
+      # google-noto-*), so every /object_info build raised FileNotFoundError. Mounting
+      # this (empty) dir makes the listdir succeed — drop .ttf here to populate it.
+      - "./storage-fonts/truetype:/usr/share/fonts/truetype"
+      # drones
+      - "D:/docker/stacks/drones/volumes/manager-app/drones-outputs:/root/ComfyUI/output/drones-outputs"
+    environment:
+      # --cache-none: free every node output (incl. decoded video frames) from RAM
+      # as soon as the workflow finishes, instead of keeping them cached.
+      # - CLI_ARGS=--cache-none
+      # NGX features (RTX Video Super Resolution) need the driver's NGX/graphics
+      # runtime mounted into the container. Default caps are only compute,utility,
+      # which caused NvVFX_Load -12 (effect not initialized). 'all' adds graphics+ngx.
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    security_opt:
+      # MEGAPAK needs relaxed security for compiling / perf libs
+      - "label=disable"
+      - "seccomp=unconfined"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+
+  cloudflared:
+    container_name: comfyui-cloudflared
+    image: cloudflare/cloudflared:latest
+    pull_policy: daily
+    command: tunnel --protocol http2 --config /home/nonroot/.cloudflared/config.yml run
+    restart: unless-stopped
+    volumes:
+      - "./services/cloudflared:/home/nonroot/.cloudflared"
+    depends_on:
+      - comfyui

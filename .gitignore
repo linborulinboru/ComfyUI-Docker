@@ -1,2 +1,12 @@
 **/storage/
 /.vscode/
+
+storage-models/
+storage-user/
+storage-cache/
+storage-nodes/
+storage-trainers/
+storage-fonts/
+
+# Cloudflare tunnel credentials - NEVER commit to a public repo
+services/
